@@ -16,8 +16,8 @@ class TestJob implements ShouldQueue
      */
     public function __construct(
         public string $rateLimitKey,
-        public int    $rateLimit,
-        public int    $rateLimitWindow,
+        public int    $rateLimit, // Number of jobs
+        public int    $rateLimitWindow, // Window in seconds
     )
     {
     }
