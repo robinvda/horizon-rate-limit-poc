@@ -29,3 +29,9 @@ Pros:
 Cons:
 - Possibly extra load on Redis because of JSON decoding.
 - Extended some core Horizon classes which may require extra attention when updating Horizon.
+
+### Code
+The following code is required to make this work:
+- `App\Providers\HorizonServiceProvider`
+- `App\Jobs\TestJob`
+- Everything in `App\Horizon`
