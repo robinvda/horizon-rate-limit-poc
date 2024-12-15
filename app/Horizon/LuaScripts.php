@@ -41,7 +41,6 @@ local function rateLimit(key, limit, window)
     end
 end
 
--- Pop the first job off of the queue...
 local job = false
 local reserved = false
 
