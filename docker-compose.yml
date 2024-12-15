@@ -1,0 +1,27 @@
+name: horizon-test
+
+networks:
+  default:
+    name: horizon-test
+
+services:
+  base:
+    image: registry.weap.nl:5005/docker/phpnginx:8.2-multi-platform
+    environment:
+      ROLE: laravel-app
+    depends_on:
+      redis:
+        condition: service_started
+    volumes:
+      - ./:/var/www
+    ports:
+      - 9999:80
+
+  redis:
+    image: redis:6
+    volumes:
+      - redis:/data
+
+volumes:
+  postgres:
+  redis:
