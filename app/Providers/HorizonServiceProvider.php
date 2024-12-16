@@ -26,13 +26,11 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
         Queue::createPayloadUsing(function ($connection, $queue, $payload) {
             $jobData = Arr::get($payload, 'data.command');
 
-            if (! isset($jobData->rateLimit)) {
+            if (! isset($jobData->rateLimitKey)) {
                 return $payload;
             }
 
-            $payload['rateLimit'] = Arr::get($payload, 'data.command')?->rateLimit;
             $payload['rateLimitKey'] = Arr::get($payload, 'data.command')?->rateLimitKey;
-            $payload['rateLimitWindow'] = Arr::get($payload, 'data.command')?->rateLimitWindow;
 
             return $payload;
         });

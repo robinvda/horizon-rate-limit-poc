@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\TestJob;
+use App\Jobs\TestJobLimitA;
+use App\Jobs\TestJobLimitB;
+use App\Jobs\TestJobLimitC;
 use App\Jobs\TestJobWithoutRateLimit;
 use Illuminate\Console\Command;
 
@@ -27,12 +29,18 @@ class FloodJobs extends Command
      */
     public function handle()
     {
-        for ($i = 0; $i < 20; $i++) {
-            // Max 5 jobs every 2 seconds
-            TestJob::dispatch('rate-limit-key', 5, 2);
-
-            // No rate limit
-            TestJobWithoutRateLimit::dispatch();
+        for ($i = 0; $i < 5; $i++) {
+            TestJobLimitA::dispatch();
         }
+
+        for ($i = 0; $i < 5; $i++) {
+            TestJobLimitB::dispatch();
+        }
+
+        for ($i = 0; $i < 5; $i++) {
+            TestJobLimitC::dispatch();
+        }
+
+        TestJobWithoutRateLimit::dispatch();
     }
 }

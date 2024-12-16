@@ -14,21 +14,19 @@
 
 Horizon dashboard is accessible at http://localhost:9999/horizon
 
-
-
 ### How it works
 
-Rate limiting is performed in Redis using a Lua script. For each job in the queue Redis needs to decode the JSON data and do the rate limit check (until it has found a valid job). This may cause extra load on Redis (needs to be tested).
-
-Note: Unlike the *rate limited* middleware of Laravel, this way of rate limiting does not increase the number of attempts of a job.
+- Jobs are pushed onto their own "sub-queue" in Redis. The key of this "sub-queue" is the queue the job is pushed on, suffixed with the key of the rate limit. These rate limit keys must be defined in the `rate-limit` config, and the job must have a property `rateLimitKey`.
+- Every time Horizon tries to get a job to execute, it will now loop through all rate limiting keys (defined in `rate-limit` config). When an attempt succeeds, it will get a job from that sub-queue.
 
 Pros:
 - No deserialization into PHP objects.
 - No major changes to Laravel (Horizon) code, so it should be compatible with other features (must be tested).
 
 Cons:
-- Possibly extra load on Redis because of JSON decoding.
+- Horizon will always try to run jobs that have no rate limiting first, even if they're added later.
 - Extended some core Horizon classes which may require extra attention when updating Horizon.
+- Requires testing to see if other features till work (like retries, middleware, etc)
 
 ### Code
 The following code is required to make this work:
