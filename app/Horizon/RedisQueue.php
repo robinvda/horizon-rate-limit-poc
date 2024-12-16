@@ -83,7 +83,7 @@ class RedisQueue extends BaseQueue
     {
         try {
             // We will wait max 1 second to get a lock
-            $nextJob = Cache::lock('x')->block(1, function () use ($queue) {
+            $nextJob = Cache::lock('x' . $queue)->block(1, function () use ($queue) {
                 // First check the normal queue (without rate limits)
                 $nextJob = $this->getNextJob($queue);
 
