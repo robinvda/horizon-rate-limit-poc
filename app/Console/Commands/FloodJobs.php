@@ -29,15 +29,15 @@ class FloodJobs extends Command
      */
     public function handle()
     {
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 1000; $i++) {
             TestJobLimitA::dispatch();
         }
 
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 1000; $i++) {
             TestJobLimitB::dispatch();
         }
 
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 20; $i++) {
             TestJobLimitC::dispatch();
         }
 
