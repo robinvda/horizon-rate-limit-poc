@@ -16,6 +16,6 @@ class TestJobLimitB implements ShouldQueue
      */
     public function handle(): void
     {
-        ray()->count('With limit B');
+        //ray()->count('With limit B');
     }
 }

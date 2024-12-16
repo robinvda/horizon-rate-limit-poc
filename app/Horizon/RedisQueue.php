@@ -15,14 +15,14 @@ class RedisQueue extends BaseQueue
     /**
      * Get the number of queue jobs that are ready to process.
      *
-     * @param  string|null  $queue
+     * @param string|null $queue
      * @return int
      */
     public function readyNow($queue = null)
     {
         $total = $this->getConnection()->llen($this->getQueue($queue) . ':');
 
-        foreach (config('rate-limit.keys') as $rateLimitKey => $rateLimit) {
+        foreach (config('rate-limit.queues.' . $queue, []) as $rateLimitKey => $rateLimit) {
             $total += $this->getConnection()->llen($this->getQueue($queue) . ':' . $rateLimitKey);
         }
 
@@ -32,20 +32,21 @@ class RedisQueue extends BaseQueue
     /**
      * Get the size of the queue.
      *
-     * @param  string|null  $queue
+     * @param string|null $queue
      * @return int
      */
     public function size($queue = null)
     {
+        $baseQueue = $queue;
         $queue = $this->getQueue($queue);
 
         $total = $this->getConnection()->eval(
-            LuaScripts::size(), 3, $queue . ':', $queue.':delayed', $queue.':reserved'
+            LuaScripts::size(), 3, $queue . ':', $queue . ':delayed', $queue . ':reserved'
         );
 
-        foreach (config('rate-limit.keys') as $rateLimitKey => $rateLimit) {
+        foreach (config('rate-limit.queues.' . $baseQueue, []) as $rateLimitKey => $rateLimit) {
             $total += $this->getConnection()->eval(
-                LuaScripts::size(), 3, $queue . ':' . $rateLimitKey, $queue.':delayed', $queue.':reserved'
+                LuaScripts::size(), 3, $queue . ':' . $rateLimitKey, $queue . ':delayed', $queue . ':reserved'
             );
         }
 
@@ -55,9 +56,9 @@ class RedisQueue extends BaseQueue
     /**
      * Push a raw payload onto the queue.
      *
-     * @param  string  $payload
-     * @param  string  $queue
-     * @param  array  $options
+     * @param string $payload
+     * @param string $queue
+     * @param array $options
      * @return mixed
      */
     public function pushRaw($payload, $queue = null, array $options = [])
@@ -65,7 +66,7 @@ class RedisQueue extends BaseQueue
         $payload = (new JobPayload($payload))->prepare($this->lastPushed);
 
         $this->getConnection()->eval(
-            LuaScripts::push(), 2, $this->getQueue($queue), $this->getQueue($queue).':notify',
+            LuaScripts::push(), 2, $this->getQueue($queue), $this->getQueue($queue) . ':notify',
             $payload->value, $payload->decoded['rateLimitKey'] ?? ''
         );
 
@@ -81,30 +82,29 @@ class RedisQueue extends BaseQueue
      */
     protected function retrieveNextJob($queue, $block = true)
     {
+        $lock = Cache::lock('lock-' . $queue);
+
         try {
-            // We will wait max 1 second to get a lock
-            $nextJob = Cache::lock('x' . $queue)->block(1, function () use ($queue) {
-                // First check the normal queue (without rate limits)
-                $nextJob = $this->getNextJob($queue);
+            $lock->block(1);
 
-                if ($nextJob[0]) {
-                    return $nextJob;
-                }
+            // First check the normal queue (without rate limits)
+            $nextJob = $this->getNextJob($queue);
 
-                foreach (config('rate-limit.keys') as $rateLimitKey => $rateLimit) {
-                    if (RateLimiter::attempt($rateLimitKey, $rateLimit['limit'], function () use (&$nextJob, $queue, $rateLimitKey) {
-                            $nextJob = $this->getNextJob($queue, $rateLimitKey);
-                        }, decaySeconds: $rateLimit['window']) && $nextJob[0]) {
-                        break;
-                    }
-                }
-
+            if (!empty($nextJob) && $nextJob[0]) {
                 return $nextJob;
-            });
-        } catch (Throwable $throwable) {
-            report($throwable);
+            }
 
-            $nextJob = [null, null];
+            foreach (config('rate-limit.queues.' . explode(':', $queue)[1], []) as $rateLimitKey => $rateLimit) {
+                if (RateLimiter::attempt($rateLimitKey, $rateLimit['limit'], function () use (&$nextJob, $queue, $rateLimitKey) {
+                        $nextJob = $this->getNextJob($queue, $rateLimitKey);
+                    }, decaySeconds: $rateLimit['window']) && $nextJob[0]) {
+                    break;
+                }
+            }
+        } catch (Throwable $e) {
+            report($e);
+        } finally {
+            $lock->release();
         }
 
         if (empty($nextJob)) {
@@ -113,8 +113,8 @@ class RedisQueue extends BaseQueue
 
         [$job, $reserved] = $nextJob;
 
-        if (! $job && ! is_null($this->blockFor) && $block &&
-            $this->getConnection()->blpop([$queue.':notify'], $this->blockFor)) {
+        if (!$job && !is_null($this->blockFor) && $block &&
+            $this->getConnection()->blpop([$queue . ':notify'], $this->blockFor)) {
             return $this->retrieveNextJob($queue, false);
         }
 
