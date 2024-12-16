@@ -192,6 +192,8 @@ return [
             'tries' => 1,
             'timeout' => 60,
             'nice' => 0,
+            'balanceCooldown' => 2,
+            'sleep' => 1,
         ],
     ],
 

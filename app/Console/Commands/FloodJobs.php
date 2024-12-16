@@ -7,6 +7,7 @@ use App\Jobs\TestJobLimitB;
 use App\Jobs\TestJobLimitC;
 use App\Jobs\TestJobWithoutRateLimit;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\RateLimiter;
 
 class FloodJobs extends Command
 {
@@ -29,15 +30,15 @@ class FloodJobs extends Command
      */
     public function handle()
     {
-        for ($i = 0; $i < 1000; $i++) {
+        for ($i = 0; $i < 100; $i++) {
             TestJobLimitA::dispatch();
         }
 
-        for ($i = 0; $i < 1000; $i++) {
+        for ($i = 0; $i < 100; $i++) {
             TestJobLimitB::dispatch();
         }
 
-        for ($i = 0; $i < 20; $i++) {
+        for ($i = 0; $i < 5; $i++) {
             TestJobLimitC::dispatch();
         }
 

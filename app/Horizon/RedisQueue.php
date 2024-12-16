@@ -2,10 +2,13 @@
 
 namespace App\Horizon;
 
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Horizon\Events\JobPushed;
 use Laravel\Horizon\JobPayload;
 use Laravel\Horizon\RedisQueue as BaseQueue;
+use Throwable;
 
 class RedisQueue extends BaseQueue
 {
@@ -78,17 +81,30 @@ class RedisQueue extends BaseQueue
      */
     protected function retrieveNextJob($queue, $block = true)
     {
-        // First check the normal queue (without rate limits)
-        $nextJob = $this->getNextJob($queue);
+        try {
+            // We will wait max 1 second to get a lock
+            $nextJob = Cache::lock('x')->block(1, function () use ($queue) {
+                // First check the normal queue (without rate limits)
+                $nextJob = $this->getNextJob($queue);
 
-        if (empty($nextJob)) {
-            foreach (config('rate-limit.keys') as $rateLimitKey => $rateLimit) {
-                if (RateLimiter::attempt($rateLimitKey, $rateLimit['limit'], function () use (&$nextJob, $queue, $rateLimitKey) {
-                        $nextJob = $this->getNextJob($queue, $rateLimitKey);
-                    }, decaySeconds: $rateLimit['window']) && $nextJob) {
-                    break;
+                if ($nextJob[0]) {
+                    return $nextJob;
                 }
-            }
+
+                foreach (config('rate-limit.keys') as $rateLimitKey => $rateLimit) {
+                    if (RateLimiter::attempt($rateLimitKey, $rateLimit['limit'], function () use (&$nextJob, $queue, $rateLimitKey) {
+                            $nextJob = $this->getNextJob($queue, $rateLimitKey);
+                        }, decaySeconds: $rateLimit['window']) && $nextJob[0]) {
+                        break;
+                    }
+                }
+
+                return $nextJob;
+            });
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            $nextJob = [null, null];
         }
 
         if (empty($nextJob)) {
@@ -112,13 +128,9 @@ class RedisQueue extends BaseQueue
      */
     protected function getNextJob(string $queue, string $rateLimitKey = '')
     {
-        $nextJob = $this->getConnection()->eval(
+        return $this->getConnection()->eval(
             LuaScripts::pop(), 3, $queue . ':' . $rateLimitKey, $queue . ':reserved', $queue . ':notify',
             $this->availableAt($this->retryAfter)
         );
-
-        [$job] = $nextJob;
-
-        return $job ? $nextJob : null;
     }
 }

@@ -6,7 +6,7 @@ return [
 
         'limit-a' => [
             'limit' => 10,
-            'window' => 2, // seconds
+            'window' => 5, // seconds
         ],
 
         'limit-b' => [
@@ -16,7 +16,7 @@ return [
 
         'limit-c' => [
             'limit' => 1,
-            'window' => 5, // seconds
+            'window' => 10, // seconds
         ],
 
     ]
