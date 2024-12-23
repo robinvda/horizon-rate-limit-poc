@@ -31,7 +31,7 @@ class FloodJobs extends Command
     public function handle()
     {
         for ($i = 0; $i < 200; $i++) {
-            //TestJobLimitA::dispatch();
+            TestJobLimitA::dispatch();
         }
 
         for ($i = 0; $i < 100; $i++) {

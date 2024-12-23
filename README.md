@@ -6,7 +6,7 @@
 - Open bash in base container
   - `docker compose exec base bash`
 - Run Horizon
-  - php artisan horizon
+  - `php artisan horizon`
 - Open another bash instance in base container
   - `docker compose exec base bash`
 - Create jobs

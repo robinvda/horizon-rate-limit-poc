@@ -2,6 +2,7 @@
 
 namespace App\Horizon;
 
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -82,43 +83,40 @@ class RedisQueue extends BaseQueue
      */
     protected function retrieveNextJob($queue, $block = true)
     {
-        $lock = Cache::lock('lock-' . $queue);
+        $lock = Cache::lock('lock-' . $queue, 1);
 
         try {
             $lock->block(1);
 
-            // First check the normal queue (without rate limits)
-            $nextJob = $this->getNextJob($queue);
+            // For each sub-queue we will get the first (oldest) job and put it in an array where the key is the name of the queue ($availableJobs)
+            // The job is only added to this array if the rate limit of that sub-queue allows it
 
-            if (!empty($nextJob) && $nextJob[0]) {
-                return $nextJob;
-            }
+            $availableJobs = [
+                $queue . ':' => $this->getNextJob($queue)[0] ?? null,
+            ];
 
             foreach (config('rate-limit.queues.' . explode(':', $queue)[1], []) as $rateLimitKey => $rateLimit) {
-                if (RateLimiter::attempt($rateLimitKey, $rateLimit['limit'], function () use (&$nextJob, $queue, $rateLimitKey) {
-                        $nextJob = $this->getNextJob($queue, $rateLimitKey);
-                    }, decaySeconds: $rateLimit['window']) && $nextJob[0]) {
-                    break;
-                }
+                RateLimiter::attempt($rateLimitKey, $rateLimit['limit'], function () use (&$availableJobs, $queue, $rateLimitKey) {
+                    $availableJobs[$queue . ':' . $rateLimitKey] = $this->getNextJob($queue, $rateLimitKey)[0] ?? null;
+                }, decaySeconds: $rateLimit['window']);
             }
+
+            // We will sort the available jobs by the timestamp of when it was pushed to the queue
+            // Then we take the first (oldest) one and that's the queue we will process a job for
+            $queue = array_key_first(Arr::sort(array_filter($availableJobs), function ($value, $key) {
+                return json_decode($value)->pushedAt ?? null;
+            }));
+
+            if (! $queue) {
+                return [null, null];
+            }
+
+            return parent::retrieveNextJob($queue, $block);
         } catch (Throwable $e) {
             report($e);
         } finally {
             $lock->release();
         }
-
-        if (empty($nextJob)) {
-            return [null, null];
-        }
-
-        [$job, $reserved] = $nextJob;
-
-        if (!$job && !is_null($this->blockFor) && $block &&
-            $this->getConnection()->blpop([$queue . ':notify'], $this->blockFor)) {
-            return $this->retrieveNextJob($queue, false);
-        }
-
-        return [$job, $reserved];
     }
 
     /**
@@ -129,7 +127,19 @@ class RedisQueue extends BaseQueue
     protected function getNextJob(string $queue, string $rateLimitKey = '')
     {
         return $this->getConnection()->eval(
-            LuaScripts::pop(), 3, $queue . ':' . $rateLimitKey, $queue . ':reserved', $queue . ':notify',
+            LuaScripts::first(), 1, $queue . ':' . $rateLimitKey,
+        );
+    }
+
+    /**
+     * @param string $queue
+     * @param string $rateLimitKey
+     * @return mixed
+     */
+    protected function popNextJob(string $queue)
+    {
+        return $this->getConnection()->eval(
+            LuaScripts::pop(), 3, $queue, $queue . ':reserved', $queue . ':notify',
             $this->availableAt($this->retryAfter)
         );
     }
