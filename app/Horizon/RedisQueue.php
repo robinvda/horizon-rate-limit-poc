@@ -107,16 +107,16 @@ class RedisQueue extends BaseQueue
                 return json_decode($value)->pushedAt ?? null;
             }));
 
-            if (! $queue) {
-                return [null, null];
+            if ($queue) {
+                return parent::retrieveNextJob($queue, $block);
             }
-
-            return parent::retrieveNextJob($queue, $block);
         } catch (Throwable $e) {
             report($e);
         } finally {
             $lock->release();
         }
+
+        return [null, null];
     }
 
     /**
