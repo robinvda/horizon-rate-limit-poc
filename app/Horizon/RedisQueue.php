@@ -91,24 +91,34 @@ class RedisQueue extends BaseQueue
             // For each sub-queue we will get the first (oldest) job and put it in an array where the key is the name of the queue ($availableJobs)
             // The job is only added to this array if the rate limit of that sub-queue allows it
 
+            // The actual queue name, for example `default`
+            $actualQueue = explode(':', $queue)[1];
+
             $availableJobs = [
                 $queue . ':' => $this->getNextJob($queue)[0] ?? null,
             ];
 
-            foreach (config('rate-limit.queues.' . explode(':', $queue)[1], []) as $rateLimitKey => $rateLimit) {
-                RateLimiter::attempt($rateLimitKey, $rateLimit['limit'], function () use (&$availableJobs, $queue, $rateLimitKey) {
+            foreach (config('rate-limit.queues.' . $actualQueue, []) as $rateLimitKey => $rateLimit) {
+                if (! RateLimiter::tooManyAttempts($rateLimitKey, $rateLimit['limit'])) {
                     $availableJobs[$queue . ':' . $rateLimitKey] = $this->getNextJob($queue, $rateLimitKey)[0] ?? null;
-                }, decaySeconds: $rateLimit['window']);
+                }
             }
 
             // We will sort the available jobs by the timestamp of when it was pushed to the queue
             // Then we take the first (oldest) one and that's the queue we will process a job for
-            $queue = array_key_first(Arr::sort(array_filter($availableJobs), function ($value, $key) {
+            $subQueue = array_key_first(Arr::sort(array_filter($availableJobs), function ($value, $key) {
                 return json_decode($value)->pushedAt ?? null;
             }));
 
-            if ($queue) {
-                return parent::retrieveNextJob($queue, $block);
+            if ($subQueue) {
+                // We've found a job so here we'll increase the attempts of the rate limit
+                if ($rateLimitKey = (explode(':', $subQueue)[2] ?? null)) {
+                    if ($rateLimitWindow = (config('rate-limit.queues')[$actualQueue][$rateLimitKey]['window'] ?? null)) {
+                        RateLimiter::hit($rateLimitKey, $rateLimitWindow);
+                    }
+                }
+
+                return parent::retrieveNextJob($subQueue, $block);
             }
         } catch (Throwable $e) {
             report($e);

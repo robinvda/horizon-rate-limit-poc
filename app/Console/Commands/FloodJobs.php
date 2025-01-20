@@ -2,12 +2,12 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\TestJobLimitA;
-use App\Jobs\TestJobLimitB;
-use App\Jobs\TestJobLimitC;
+use App\Jobs\TenPerSec;
+use App\Jobs\OnePerSec;
+use App\Jobs\OnePerMin;
 use App\Jobs\TestJobWithoutRateLimit;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\RateLimiter;
 
 class FloodJobs extends Command
 {
@@ -16,7 +16,7 @@ class FloodJobs extends Command
      *
      * @var string
      */
-    protected $signature = 'flood-jobs';
+    protected $signature = 'flood-jobs {tenSec=100} {oneSec=100} {oneMin=5} {noRateLimit=10}';
 
     /**
      * The console command description.
@@ -30,18 +30,14 @@ class FloodJobs extends Command
      */
     public function handle()
     {
-        for ($i = 0; $i < 200; $i++) {
-            TestJobLimitA::dispatch();
-        }
+        $tenSec = (int)$this->argument('tenSec');
+        $oneSec = (int)$this->argument('oneSec');
+        $oneMin = (int)$this->argument('oneMin');
+        $noRateLimit = (int)$this->argument('noRateLimit');
 
-        for ($i = 0; $i < 100; $i++) {
-            TestJobLimitB::dispatch();
-        }
-
-        for ($i = 0; $i < 5; $i++) {
-            TestJobLimitC::dispatch();
-        }
-
-        TestJobWithoutRateLimit::dispatch();
+        collect(range(1, $tenSec))->each(fn () => TenPerSec::dispatch(Carbon::now()));
+        collect(range(1, $oneSec))->each(fn () => OnePerSec::dispatch(Carbon::now()));
+        collect(range(1, $oneMin))->each(fn () => OnePerMin::dispatch(Carbon::now()));
+        collect(range(1, $noRateLimit))->each(fn () => TestJobWithoutRateLimit::dispatch(Carbon::now()));
     }
 }

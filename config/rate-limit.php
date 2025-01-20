@@ -4,17 +4,17 @@ return [
 
     'queues' => [
         'default' => [
-            'limit-a' => [
+            'ten-per-sec' => [
                 'limit' => 10,
                 'window' => 1, // seconds
             ],
 
-            'limit-b' => [
+            'one-per-sec' => [
                 'limit' => 1,
                 'window' => 1, // seconds
             ],
 
-            'limit-c' => [
+            'one-per-min' => [
                 'limit' => 1,
                 'window' => 60, // seconds
             ],

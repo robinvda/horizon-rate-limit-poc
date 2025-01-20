@@ -5,17 +5,17 @@ namespace App\Jobs;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-class TestJobLimitB implements ShouldQueue
+class TenPerSec implements ShouldQueue
 {
     use Queueable;
 
-    public string $rateLimitKey = 'limit-b';
+    public string $rateLimitKey = 'ten-per-sec';
 
     /**
      * Execute the job.
      */
     public function handle(): void
     {
-        //ray()->count('With limit B');
+        //ray()->count('With limit A');
     }
 }
