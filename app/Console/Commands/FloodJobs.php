@@ -2,8 +2,11 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\TestJob;
+use App\Jobs\TenPerSec;
+use App\Jobs\OnePerSec;
+use App\Jobs\OnePerMin;
 use App\Jobs\TestJobWithoutRateLimit;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 
 class FloodJobs extends Command
@@ -13,7 +16,7 @@ class FloodJobs extends Command
      *
      * @var string
      */
-    protected $signature = 'flood-jobs';
+    protected $signature = 'flood-jobs {tenSec=20} {oneSec=10} {oneMin=2} {noRateLimit=10}';
 
     /**
      * The console command description.
@@ -27,12 +30,14 @@ class FloodJobs extends Command
      */
     public function handle()
     {
-        for ($i = 0; $i < 20; $i++) {
-            // Max 5 jobs every 2 seconds
-            TestJob::dispatch('rate-limit-key', 5, 2);
+        $tenSec = (int)$this->argument('tenSec');
+        $oneSec = (int)$this->argument('oneSec');
+        $oneMin = (int)$this->argument('oneMin');
+        $noRateLimit = (int)$this->argument('noRateLimit');
 
-            // No rate limit
-            TestJobWithoutRateLimit::dispatch();
-        }
+        collect(range(1, $tenSec))->each(fn () => TenPerSec::dispatch(Carbon::now()));
+        collect(range(1, $oneSec))->each(fn () => OnePerSec::dispatch(Carbon::now()));
+        collect(range(1, $oneMin))->each(fn () => OnePerMin::dispatch(Carbon::now()));
+        collect(range(1, $noRateLimit))->each(fn () => TestJobWithoutRateLimit::dispatch(Carbon::now()));
     }
 }

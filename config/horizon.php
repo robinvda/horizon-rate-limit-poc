@@ -184,7 +184,7 @@ return [
             'connection' => 'redis',
             'queue' => ['default'],
             'balance' => 'auto',
-            'autoScalingStrategy' => 'time',
+            'autoScalingStrategy' => 'size',
             'maxProcesses' => 1,
             'maxTime' => 0,
             'maxJobs' => 0,
@@ -192,6 +192,8 @@ return [
             'tries' => 1,
             'timeout' => 60,
             'nice' => 0,
+            'balanceCooldown' => 2,
+            'sleep' => 3,
         ],
     ],
 
@@ -206,7 +208,7 @@ return [
 
         'local' => [
             'supervisor-1' => [
-                'maxProcesses' => 3,
+                'maxProcesses' => 14,
             ],
         ],
     ],
