@@ -23,8 +23,20 @@ class RedisQueue extends BaseQueue
     {
         $total = $this->getConnection()->llen($this->getQueue($queue) . ':');
 
+        // Here we add the jobs count of each sub queue
         foreach ($this->getRateLimits($this->getQueue($queue)) as $rateLimit) {
-            $total += $this->getConnection()->llen($this->getQueue($queue) . ':' . $rateLimit->key);
+            $jobsCount = $this->getConnection()->llen($this->getQueue($queue) . ':' . $rateLimit->key);
+
+            if (app()->runningInConsole()) {
+                // When running in console (Horizon processes) we only count the jobs which can actually be executed,
+                // which is either the total jobs count or the remaining rate limit attempts, depending on which is lowest
+                $remainingAttempts = RateLimiter::remaining($rateLimit->key, $rateLimit->limit);
+
+                $total += min($jobsCount, $remainingAttempts);
+            } else {
+                // When this is an API request (Horizon dashboard) we get all jobs that are in the queue
+                $total += $jobsCount;
+            }
         }
 
         return $total;
