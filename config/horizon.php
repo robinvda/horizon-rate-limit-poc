@@ -182,9 +182,9 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default','a','b','c','d','e'],
+            'queue' => ['default'],
             'balance' => 'auto',
-            'autoScalingStrategy' => 'time',
+            'autoScalingStrategy' => 'size',
             'maxProcesses' => 1,
             'maxTime' => 0,
             'maxJobs' => 0,

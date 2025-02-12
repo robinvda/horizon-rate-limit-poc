@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Horizon\RedisConnector;
 use App\Horizon\RedisQueue;
+use App\Jobs\RateLimited;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Jobs\RedisJob;
 use Illuminate\Queue\QueueManager;
@@ -26,11 +27,9 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
         Queue::createPayloadUsing(function ($connection, $queue, $payload) {
             $jobData = Arr::get($payload, 'data.command');
 
-            if (! isset($jobData->rateLimitKey)) {
-                return $payload;
+            if ($jobData instanceof RateLimited) {
+                $payload['rateLimit'] = $jobData->rateLimit();
             }
-
-            $payload['rateLimitKey'] = Arr::get($payload, 'data.command')?->rateLimitKey;
 
             return $payload;
         });

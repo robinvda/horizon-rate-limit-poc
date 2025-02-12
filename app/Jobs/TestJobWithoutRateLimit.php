@@ -14,6 +14,6 @@ class TestJobWithoutRateLimit implements ShouldQueue
      */
     public function handle(): void
     {
-        ray()->count('Without limit');
+        //
     }
 }

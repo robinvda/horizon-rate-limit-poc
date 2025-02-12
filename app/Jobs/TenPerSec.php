@@ -5,17 +5,24 @@ namespace App\Jobs;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-class TenPerSec implements ShouldQueue
+class TenPerSec implements ShouldQueue, RateLimited
 {
     use Queueable;
-
-    public string $rateLimitKey = 'ten-per-sec';
 
     /**
      * Execute the job.
      */
     public function handle(): void
     {
-        //ray()->count('With limit A');
+        //
+    }
+
+    public function rateLimit()
+    {
+        return [
+            'key' => 'ten-per-sec',
+            'limit' => 10,
+            'window' => 1, // seconds
+        ];
     }
 }

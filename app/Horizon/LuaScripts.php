@@ -18,6 +18,9 @@ class LuaScripts extends BaseScripts
     public static function push()
     {
         return <<<'LUA'
+-- Push to sub queues
+redis.call('hset', KEYS[1] .. '::rate_limits', ARGV[2], ARGV[3])
+
 -- Push the job onto a queue
 redis.call('rpush', KEYS[1] .. ':' .. ARGV[2], ARGV[1])
 
@@ -33,6 +36,26 @@ LUA;
     {
         return <<<'LUA'
 return redis.call('lrange', KEYS[1], 0, 0)
+LUA;
+    }
+
+    /**
+     * @return string
+     */
+    public static function rateLimits()
+    {
+        return <<<'LUA'
+return redis.call('hvals', KEYS[1] .. '::rate_limits')
+LUA;
+    }
+
+    /**
+     * @return string
+     */
+    public static function removeRateLimit()
+    {
+        return <<<'LUA'
+return redis.call('hdel', KEYS[1] .. '::rate_limits', ARGV[1])
 LUA;
     }
 }

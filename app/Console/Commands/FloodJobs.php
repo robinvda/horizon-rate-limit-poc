@@ -16,7 +16,7 @@ class FloodJobs extends Command
      *
      * @var string
      */
-    protected $signature = 'flood-jobs {tenSec=100} {oneSec=100} {oneMin=5} {noRateLimit=10}';
+    protected $signature = 'flood-jobs {tenSec=20} {oneSec=10} {oneMin=2} {noRateLimit=10}';
 
     /**
      * The console command description.
