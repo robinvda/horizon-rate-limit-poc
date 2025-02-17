@@ -153,6 +153,22 @@ class RedisQueue extends BaseQueue
     }
 
     /**
+     * Delete a reserved job from the queue.
+     *
+     * @param  string  $queue
+     * @param  \Illuminate\Queue\Jobs\RedisJob  $job
+     * @return void
+     */
+    public function deleteReserved($queue, $job)
+    {
+        if ($rateLimit = ($job->payload()['rateLimit'] ?? null)) {
+            ray($this->getConnection()->zrem($this->getQueue($queue) . ':' . $rateLimit['key'] . ':reserved', $job->getReservedJob()));
+        }
+
+        parent::deleteReserved($queue, $job);
+    }
+
+    /**
      * @param string $queue
      * @param string $rateLimitKey
      * @return mixed
