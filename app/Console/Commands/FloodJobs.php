@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\Fail;
 use App\Jobs\TenPerSec;
 use App\Jobs\OnePerSec;
 use App\Jobs\OnePerMin;
@@ -30,6 +31,8 @@ class FloodJobs extends Command
      */
     public function handle()
     {
+        Fail::dispatch();
+
         $tenSec = (int)$this->argument('tenSec');
         $oneSec = (int)$this->argument('oneSec');
         $oneMin = (int)$this->argument('oneMin');

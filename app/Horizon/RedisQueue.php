@@ -21,11 +21,11 @@ class RedisQueue extends BaseQueue
      */
     public function readyNow($queue = null)
     {
-        $total = $this->getConnection()->llen($this->getQueue($queue) . ':');
+        $total = $this->getConnection()->llen($this->getSubqueue($queue));
 
         // Here we add the jobs count of each sub queue
         foreach ($this->getRateLimits($this->getQueue($queue)) as $rateLimit) {
-            $jobsCount = $this->getConnection()->llen($this->getQueue($queue) . ':' . $rateLimit->key);
+            $jobsCount = $this->getConnection()->llen($this->getSubqueue($queue, $rateLimit->key));
 
             if (app()->runningInConsole()) {
                 // When running in console (Horizon processes) we only count the jobs which can actually be executed,
@@ -53,12 +53,12 @@ class RedisQueue extends BaseQueue
         $queue = $this->getQueue($queue);
 
         $total = $this->getConnection()->eval(
-            LuaScripts::size(), 3, $queue . ':', $queue . ':delayed', $queue . ':reserved'
+            LuaScripts::size(), 3, $this->getSubqueue($queue), $this->getSubqueue($queue, delayed: true), $queue . ':reserved'
         );
 
         foreach ($this->getRateLimits($queue) as $rateLimit) {
             $total += $this->getConnection()->eval(
-                LuaScripts::size(), 3, $queue . ':' . $rateLimit->key, $queue . ':delayed', $queue . ':reserved'
+                LuaScripts::size(), 3, $this->getSubqueue($queue, $rateLimit->key),  $this->getSubqueue($queue, $rateLimit->key, delayed: true), $queue . ':reserved'
             );
         }
 
@@ -123,23 +123,22 @@ class RedisQueue extends BaseQueue
             }));
 
             if ($rateLimitJob) {
-                $subQueue = $queue . ':';
-
                 if ($rateLimitJob->rateLimit) {
                     // We've found a job so here we'll increase the attempts of the rate limit
                     RateLimiter::hit($rateLimitJob->rateLimit->key, $rateLimitJob->rateLimit->window);
 
                     // If there are no other jobs left for this rate limit, we'll clean it up
-                    $jobsCount = $this->getConnection()->eval(LuaScripts::size(), 3, $queue . ':' . ($rateLimitJob->rateLimit->key ?? ''), $queue . ':delayed', $queue . ':reserved');
+                    $subqueue = $queue . (($rateLimitJob->rateLimit->key ?? '') ? ':' . $rateLimitJob->rateLimit->key : '');
+                    $jobsCount = $this->getConnection()->eval(LuaScripts::size(), 3, $subqueue, $subqueue . ':delayed', $queue . ':reserved');
 
                     if ($jobsCount <= 1) {
                         $this->removeRateLimit($queue, $rateLimitJob->rateLimit->key ?? '');
                     }
 
-                    $subQueue .= $rateLimitJob->rateLimit->key;
+                    $queue .= ':' . $rateLimitJob->rateLimit->key;
                 }
 
-                return parent::retrieveNextJob($subQueue, $block);
+                return parent::retrieveNextJob($queue, $block);
             }
         } catch (Throwable $e) {
             if (! ($e instanceof LockTimeoutException)) {
@@ -153,19 +152,34 @@ class RedisQueue extends BaseQueue
     }
 
     /**
-     * Delete a reserved job from the queue.
+     * Delete a reserved job from the reserved queue and release it.
      *
      * @param  string  $queue
      * @param  \Illuminate\Queue\Jobs\RedisJob  $job
+     * @param  int  $delay
      * @return void
      */
-    public function deleteReserved($queue, $job)
+    public function deleteAndRelease($queue, $job, $delay)
     {
-        if ($rateLimit = ($job->payload()['rateLimit'] ?? null)) {
-            ray($this->getConnection()->zrem($this->getQueue($queue) . ':' . $rateLimit['key'] . ':reserved', $job->getReservedJob()));
-        }
+        $subqueue = $this->getSubqueue($queue, $job->payload()['rateLimit']['key'] ?? '');
 
-        parent::deleteReserved($queue, $job);
+        $this->getConnection()->eval(
+            LuaScripts::release(), 3, $subqueue.':delayed', $this->getQueue($queue).':reserved', $this->getQueue($queue),
+            $job->getReservedJob(), $this->availableAt($delay), $job->payload()['rateLimit']['key'] ?? '', json_encode($job->payload()['rateLimit'] ?? '')
+        );
+    }
+
+    /**
+     * @param $queue
+     * @return void
+     */
+    protected function migrate($queue)
+    {
+        parent::migrate($queue);
+
+        foreach ($this->getRateLimits($queue) as $rateLimit) {
+            parent::migrate($queue . ':' . $rateLimit->key);
+        }
     }
 
     /**
@@ -176,7 +190,7 @@ class RedisQueue extends BaseQueue
     protected function getNextJob(string $queue, string $rateLimitKey = '')
     {
         return $this->getConnection()->eval(
-            LuaScripts::first(), 1, $queue . ':' . $rateLimitKey,
+            LuaScripts::first(), 1, $queue . ($rateLimitKey ? ':' . $rateLimitKey : ''),
         );
     }
 
@@ -203,9 +217,21 @@ class RedisQueue extends BaseQueue
             $rateLimitKey
         );
     }
+
+    /**
+     * @param $queue
+     * @param string $rateLimitKey
+     * @param bool $delayed
+     * @return string
+     */
+    protected function getSubqueue($queue, $rateLimitKey = '', $delayed = false)
+    {
+        return $this->getQueue($queue) . ($rateLimitKey ? ':' . $rateLimitKey : '') . ($delayed ? ':delayed' : '');
+    }
 }
 
-class RateLimitJob {
+class RateLimitJob
+{
     public $rateLimit;
     public $job;
 
