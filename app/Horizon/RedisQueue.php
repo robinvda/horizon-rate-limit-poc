@@ -7,6 +7,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Horizon\Events\JobPushed;
+use Laravel\Horizon\Events\JobReleased;
 use Laravel\Horizon\JobPayload;
 use Laravel\Horizon\RedisQueue as BaseQueue;
 use Throwable;
@@ -152,6 +153,23 @@ class RedisQueue extends BaseQueue
     }
 
     /**
+     * Delete a reserved job from the queue.
+     *
+     * @param  string  $queue
+     * @param  \Illuminate\Queue\Jobs\RedisJob  $job
+
+     * @return void
+     */
+    public function deleteReserved($queue, $job)
+    {
+        if ($rateLimit = ($job->payload()['rateLimit'] ?? null)) {
+            $this->getConnection()->zrem($this->getSubqueue($queue, $rateLimit['key']) . ':reserved', $job->getReservedJob());
+        }
+
+        parent::deleteReserved($queue, $job);
+    }
+
+    /**
      * Delete a reserved job from the reserved queue and release it.
      *
      * @param  string  $queue
@@ -167,6 +185,8 @@ class RedisQueue extends BaseQueue
             LuaScripts::release(), 3, $subqueue.':delayed', $this->getQueue($queue).':reserved', $this->getQueue($queue),
             $job->getReservedJob(), $this->availableAt($delay), $job->payload()['rateLimit']['key'] ?? '', json_encode($job->payload()['rateLimit'] ?? '')
         );
+
+        $this->event($this->getQueue($queue), new JobReleased($job->getReservedJob()));
     }
 
     /**
