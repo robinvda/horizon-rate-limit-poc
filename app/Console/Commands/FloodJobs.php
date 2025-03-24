@@ -39,8 +39,8 @@ class FloodJobs extends Command
         $noRateLimit = (int)$this->argument('noRateLimit');
 
         collect(range(1, $tenSec))->each(fn () => TenPerSec::dispatch(Carbon::now()));
-//        collect(range(1, $oneSec))->each(fn () => OnePerSec::dispatch(Carbon::now()));
-//        collect(range(1, $oneMin))->each(fn () => OnePerMin::dispatch(Carbon::now()));
-//        collect(range(1, $noRateLimit))->each(fn () => TestJobWithoutRateLimit::dispatch(Carbon::now()));
+        collect(range(1, $oneSec))->each(fn () => OnePerSec::dispatch(Carbon::now()));
+        collect(range(1, $oneMin))->each(fn () => OnePerMin::dispatch(Carbon::now()));
+        collect(range(1, $noRateLimit))->each(fn () => TestJobWithoutRateLimit::dispatch(Carbon::now()));
     }
 }

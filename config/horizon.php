@@ -193,7 +193,7 @@ return [
             'timeout' => 60,
             'nice' => 0,
             'balanceCooldown' => 2,
-            'sleep' => 3,
+            'sleep' => 0,
         ],
     ],
 
