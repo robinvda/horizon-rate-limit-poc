@@ -18,7 +18,7 @@ class ProcessTask extends Task
         return ProcessingQueue::class;
     }
 
-    public function subqueue(): string
+    public function subQueue(): string
     {
         return $this->value;
     }
@@ -26,6 +26,6 @@ class ProcessTask extends Task
     public function handle()
     {
         ray('Processing ' . $this->value);
-        usleep(100);
+        sleep(1);
     }
 }

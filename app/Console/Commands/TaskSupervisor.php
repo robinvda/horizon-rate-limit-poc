@@ -33,6 +33,8 @@ class TaskSupervisor extends Command
      */
     protected Collection $processes;
 
+    protected string $id;
+
     protected bool $shouldExit = false;
 
     /**
@@ -40,7 +42,11 @@ class TaskSupervisor extends Command
      */
     public function handle()
     {
+        $this->id = Str::random();
+
         $this->setExitHandlers();
+
+        Redis::command('sadd', ['task-supervisors', $this->id]);
 
         $this->processes = collect();
 
@@ -52,6 +58,8 @@ class TaskSupervisor extends Command
             $process = Process::forever()->start("php artisan task:worker $id");
 
             $this->processes->put($id, $process);
+
+            Redis::command('rpush', ["task-supervisors:$this->id:workers", $id]);
         }
 
         // Wait for processes to start
@@ -69,7 +77,7 @@ class TaskSupervisor extends Command
         foreach (Redis::command('smembers', [Task::REDIS_KEY_QUEUES]) as $queue) {
             $this->handleExit();
 
-            list($queueClass, $subqueue) = explode(':', $queue);
+            list($queueClass, $subQueue) = explode(':', $queue);
 
             /** @var class-string<TaskQueue> $queueClass */
             if ($queueClass::attempt($queue)) {
@@ -88,13 +96,18 @@ class TaskSupervisor extends Command
 
                 $this->info("Running task on $processId");
 
+                // Mark the worker as "working" by setting the active task
+                // Note: This can be any value, the task value is not used at the moment
                 Redis::command('set', ["task-worker:$processId", $task]);
 
-                // TODO Since we now set a redis key for the worker with the active task, we may not need the pubsub pattern
+                // TODO Since we set a redis key for the worker with the active task, we may not need the pubsub pattern
                 Redis::publish("task-worker-$processId", $task);
 
                 if (Redis::command('llen', [$queue]) == 0) {
+                    // If the queue is empty, remove it from the list of queues
                     Redis::command('srem', [Task::REDIS_KEY_QUEUES, $queue]);
+
+                    // Also remove the queue itself
                     Redis::command('del', [$queue]);
                 }
             }
@@ -153,6 +166,10 @@ class TaskSupervisor extends Command
 
         foreach ($this->processes ?? [] as $processId => $process) {
             Redis::command('del', ["task-worker:$processId"]);
+
+            Redis::command('del', ["task-supervisors:$processId:workers"]);
+
+            Redis::command('srem', ['task-supervisors', $this->id]);
 
             $process->stop();
         }
