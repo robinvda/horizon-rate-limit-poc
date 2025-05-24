@@ -12,14 +12,24 @@ abstract class Task
 
     public abstract function handle();
 
+    public function subqueue(): ?string
+    {
+        return null;
+    }
+
     public static function dispatch(...$arguments)
     {
         $task = new static(...$arguments);
 
-        $queue = $task->queue();
+        $queue = $task->makeQueue();
 
         Redis::command('rpush', [$queue, serialize($task)]);
 
         Redis::command('sadd', [static::REDIS_KEY_QUEUES, $queue]);
+    }
+
+    protected function makeQueue(): string
+    {
+        return $this->queue() . ':' . $this->subqueue();
     }
 }

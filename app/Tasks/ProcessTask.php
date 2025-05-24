@@ -2,19 +2,30 @@
 
 namespace App\Tasks;
 
+use App\Tasks\Queues\ProcessingQueue;
+
 class ProcessTask extends Task
 {
     public function __construct(public int $value)
     {
     }
 
+    /**
+     * @return class-string
+     */
     public function queue(): string
     {
-        return 'john-doe-queue';
+        return ProcessingQueue::class;
+    }
+
+    public function subqueue(): string
+    {
+        return $this->value;
     }
 
     public function handle()
     {
+        ray('Processing ' . $this->value);
         usleep(100);
     }
 }

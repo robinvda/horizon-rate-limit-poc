@@ -26,6 +26,6 @@ class TaskFlood extends Command
      */
     public function handle()
     {
-        collect(range(1, 10000))->each(fn ($value) => ProcessTask::dispatch($value));
+        collect(range(1, 10))->each(fn ($value) => ProcessTask::dispatch(rand(1, 3)));
     }
 }

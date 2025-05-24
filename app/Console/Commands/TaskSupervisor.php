@@ -2,11 +2,13 @@
 
 namespace App\Console\Commands;
 
+use App\Tasks\Queues\TaskQueue;
 use App\Tasks\Task;
 use Illuminate\Console\Command;
 use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -17,7 +19,7 @@ class TaskSupervisor extends Command
      *
      * @var string
      */
-    protected $signature = 'task:supervisor {processes=5}';
+    protected $signature = 'task:supervisor {processes=5} {wait=1}';
 
     /**
      * The console command description.
@@ -67,8 +69,10 @@ class TaskSupervisor extends Command
         foreach (Redis::command('smembers', [Task::REDIS_KEY_QUEUES]) as $queue) {
             $this->handleExit();
 
-            // todo test rate limit
-            if (true) {
+            list($queueClass, $subqueue) = explode(':', $queue);
+
+            /** @var class-string<TaskQueue> $queueClass */
+            if ($queueClass::attempt($queue)) {
                 // TODO We're popping the task before sending it to a worker which means it is lost if the supervisor stops/crashes in that time
                 // TODO This risk can be limited by finding a process before popping the task
                 // TODO Or by first getting the task and popping it after it was sent to a worker (increases load on Redis)
@@ -104,7 +108,7 @@ class TaskSupervisor extends Command
         $this->info('No tasks found');
 
         // Wait to avoid high cpu usage
-        sleep(3);
+        sleep($this->argument('wait'));
 
         $this->waitForTasks();
     }
