@@ -19,7 +19,7 @@ class TaskSupervisor extends Command
      *
      * @var string
      */
-    protected $signature = 'task:supervisor {processes=5} {wait=1}';
+    protected $signature = 'task:supervisor {processes=5} {wait=1000}';
 
     /**
      * The console command description.
@@ -121,7 +121,7 @@ class TaskSupervisor extends Command
         $this->info('No tasks found');
 
         // Wait to avoid high cpu usage
-        sleep($this->argument('wait'));
+        usleep($this->argument('wait'));
 
         $this->waitForTasks();
     }
@@ -139,7 +139,7 @@ class TaskSupervisor extends Command
         }
 
         // Wait to avoid high cpu usage
-        usleep(100);
+        usleep($this->argument('wait'));
 
         return $this->findIdleProcessId();
     }

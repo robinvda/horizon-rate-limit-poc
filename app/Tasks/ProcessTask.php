@@ -26,6 +26,6 @@ class ProcessTask extends Task
     public function handle()
     {
         ray('Processing ' . $this->value);
-        sleep(1);
+        sleep(1); // Simulate work
     }
 }
