@@ -8,6 +8,8 @@ services:
             context: ./vendor/laravel/sail/runtimes/8.4
             dockerfile: Dockerfile
         image: sail-8.4/app
+        environment:
+            XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
         volumes:
             - '.:/var/www/html'
         ports:
