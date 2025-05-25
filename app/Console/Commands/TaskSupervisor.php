@@ -19,7 +19,7 @@ class TaskSupervisor extends Command
      *
      * @var string
      */
-    protected $signature = 'task:supervisor {processes=5} {wait=1000}';
+    protected $signature = 'task:supervisor {processes=5} {wait=1}';
 
     /**
      * The console command description.
@@ -62,8 +62,15 @@ class TaskSupervisor extends Command
             Redis::command('rpush', ["task-supervisors:$this->id:workers", $id]);
         }
 
-        // Wait for processes to start
-        sleep(3);
+        if (! $this->waitForWorkers()) {
+            $this->error('Some workers were unable to start');
+
+            $this->stopWorkers();
+
+            return static::FAILURE;
+        }
+
+        $this->info('Workers started, waiting for tasks...');
 
         $this->waitForTasks();
     }
@@ -120,7 +127,7 @@ class TaskSupervisor extends Command
             $this->info('No tasks found');
 
             // Wait to avoid high cpu usage
-            usleep($this->argument('wait'));
+            sleep($this->argument('wait'));
         }
 
         $this->waitForTasks();
@@ -139,7 +146,7 @@ class TaskSupervisor extends Command
         }
 
         // Wait to avoid high cpu usage
-        usleep($this->argument('wait'));
+        sleep($this->argument('wait'));
 
         return $this->findIdleProcessId();
     }
@@ -160,6 +167,29 @@ class TaskSupervisor extends Command
         }
     }
 
+    protected function waitForWorkers($retries = 3): bool
+    {
+        $processesAreReady = true;
+
+        foreach ($this->processes as $id => $process) {
+            if (! Redis::command('get', ["task-worker:$id"])) {
+                $processesAreReady = false;
+            }
+        }
+
+        if (! $processesAreReady) {
+            if ($retries <= 0) {
+                return false;
+            }
+
+            sleep(1);
+
+            return $this->waitForWorkers($retries + 1);
+        }
+
+        return true;
+    }
+
     protected function stopWorkers(): void
     {
         $this->info('Stopping workers...');
@@ -170,7 +200,7 @@ class TaskSupervisor extends Command
 
             Redis::command('del', ["task-worker:$processId"]);
 
-            Redis::command('del', ["task-supervisors:$processId:workers"]);
+            Redis::command('del', ["task-supervisors:$this->id:workers"]);
 
             Redis::command('srem', ['task-supervisors', $this->id]);
         }
