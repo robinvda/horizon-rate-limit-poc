@@ -35,12 +35,15 @@ class TaskSupervisor extends Command
 
     protected string $id;
 
+    protected ?string $processingQueue;
+    protected ?string $processingSerializedTask;
+
     protected bool $shouldExit = false;
 
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
         $this->id = Str::uuid()->toString();
 
@@ -73,6 +76,8 @@ class TaskSupervisor extends Command
         $this->info('Workers started, waiting for tasks...');
 
         $this->waitForTasks();
+
+        return static::SUCCESS;
     }
 
     protected function waitForTasks(): void
@@ -84,6 +89,8 @@ class TaskSupervisor extends Command
         foreach (Redis::command('smembers', [Task::REDIS_KEY_QUEUES]) as $queue) {
             $this->handleExit();
 
+            $this->processingQueue = $queue;
+
             list($queueClass, $subQueue) = explode(':', $queue);
 
             /** @var class-string<TaskQueue> $queueClass */
@@ -91,10 +98,10 @@ class TaskSupervisor extends Command
                 // If the supervisor stops (without signals) between popping the task and assigning it to a worker, the task is lost
                 // However, this is the most performant way to avoid jobs being assigned twice when running multiple supervisors
                 // An alternative could be to pop it and immediately set it to some temporary Redis key (requires an extra Redis call)
-                $task = Redis::command('lpop', [$queue]);
+                $this->processingSerializedTask = Redis::command('lpop', [$queue]);
 
                 // If no task was found, continue to next queue
-                if (! $task) {
+                if (! $this->processingSerializedTask) {
                     continue;
                 }
 
@@ -106,10 +113,13 @@ class TaskSupervisor extends Command
 
                 // Mark the worker as "working" by setting the active task
                 // Note: This can be any value (except `none`), the task value is not used at the moment
-                Redis::command('set', ["task-worker:$processId", $task]);
+                Redis::command('set', ["task-worker:$processId", $this->processingSerializedTask]);
 
                 // Send the task to the worker
-                Redis::publish("task-worker-$processId", $task);
+                Redis::publish("task-worker-$processId", $this->processingSerializedTask);
+
+                $this->processingSerializedTask = null;
+                $this->processingQueue = null;
 
                 // If the queue is empty
                 if (Redis::command('llen', [$queue]) == 0) {
@@ -124,8 +134,6 @@ class TaskSupervisor extends Command
 
         // If no task was found (all queues are empty), we will wait before trying again
         if (! $taskFound) {
-            $this->info('No tasks found');
-
             // Wait to avoid high cpu usage
             sleep($this->argument('wait'));
         }
@@ -161,6 +169,11 @@ class TaskSupervisor extends Command
     protected function handleExit(): void
     {
         if ($this->shouldExit) {
+            if ($this->processingQueue && $this->processingSerializedTask) {
+                // If we were processing a task, push it back to the queue
+                Redis::command('lpush', [$this->processingQueue, $this->processingSerializedTask]);
+            }
+
             $this->stopWorkers();
 
             exit();
