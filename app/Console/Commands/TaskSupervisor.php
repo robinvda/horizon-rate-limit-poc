@@ -8,7 +8,6 @@ use Illuminate\Console\Command;
 use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -19,7 +18,7 @@ class TaskSupervisor extends Command
      *
      * @var string
      */
-    protected $signature = 'task:supervisor {processes=5} {wait=1}';
+    protected $signature = 'task:supervisor {workers=5} {wait=1} {maxTasks=50}';
 
     /**
      * The console command description.
@@ -31,7 +30,7 @@ class TaskSupervisor extends Command
     /**
      * @var Collection<string, InvokedProcess>
      */
-    protected Collection $processes;
+    protected Collection $workers;
 
     protected string $id;
 
@@ -51,18 +50,10 @@ class TaskSupervisor extends Command
 
         Redis::command('sadd', ['task-supervisors', $this->id]);
 
-        $this->processes = collect();
+        $this->workers = collect();
 
-        for ($i = 0; $i < $this->argument('processes'); $i++) {
-            $id = Str::uuid()->toString();
-
-            $this->info("Starting process ($id)");
-
-            $process = Process::forever()->start("php artisan task:worker $id");
-
-            $this->processes->put($id, $process);
-
-            Redis::command('rpush', ["task-supervisors:$this->id:workers", $id]);
+        for ($i = 0; $i < $this->argument('workers'); $i++) {
+            $this->createWorker();
         }
 
         if (! $this->waitForWorkers()) {
@@ -107,16 +98,16 @@ class TaskSupervisor extends Command
 
                 $taskFound = true;
 
-                $processId = $this->findIdleProcessId();
+                $workerId = $this->findIdleWorkerId();
 
-                $this->info("Running task on $processId");
+                $this->info("Running task on $workerId");
 
                 // Mark the worker as "working" by setting the active task
                 // Note: This can be any value (except `none`), the task value is not used at the moment
-                Redis::command('set', ["task-worker:$processId", $this->processingSerializedTask]);
+                Redis::command('set', ["task-worker:$workerId", $this->processingSerializedTask]);
 
                 // Send the task to the worker
-                Redis::publish("task-worker-$processId", $this->processingSerializedTask);
+                Redis::publish("task-worker-$workerId", $this->processingSerializedTask);
 
                 $this->processingSerializedTask = null;
                 $this->processingQueue = null;
@@ -141,22 +132,33 @@ class TaskSupervisor extends Command
         $this->waitForTasks();
     }
 
-    protected function findIdleProcessId(): string
+    protected function findIdleWorkerId(): string
     {
         $this->handleExit();
 
-        $processId = $this->processes
+        $workerId = $this->workers
             ->keys()
-            ->first(fn ($processId) => Redis::command('get', ["task-worker:$processId"]) === 'none');
+            ->first(fn ($workerId) => Redis::command('get', ["task-worker:$workerId"]) === 'none');
 
-        if ($processId) {
-            return $processId;
+        if ($workerId) {
+            // In case the worker has already processed the max number of tasks, we will stop it and create a new one
+            if (Redis::command('get', ["task-worker:$workerId:processed-tasks"]) >= $this->argument('maxTasks')) {
+                $this->info("Stopping worker $workerId");
+
+                $this->stopWorker($workerId);
+
+                $this->createWorker();
+
+                return $this->findIdleWorkerId();
+            }
+
+            return $workerId;
         }
 
         // Wait to avoid high cpu usage
         sleep($this->argument('wait'));
 
-        return $this->findIdleProcessId();
+        return $this->findIdleWorkerId();
     }
 
     protected function setExitHandlers(): void
@@ -180,17 +182,30 @@ class TaskSupervisor extends Command
         }
     }
 
+    protected function createWorker(): void
+    {
+        $id = Str::uuid()->toString();
+
+        $this->info("Starting worker $id");
+
+        $worker = Process::forever()->start("php artisan task:worker $id");
+
+        $this->workers->put($id, $worker);
+
+        Redis::command('sadd', ["task-supervisors:$this->id:workers", $id]);
+    }
+
     protected function waitForWorkers($retries = 3): bool
     {
-        $processesAreReady = true;
+        $workersAreReady = true;
 
-        foreach ($this->processes as $id => $process) {
+        foreach ($this->workers as $id => $worker) {
             if (! Redis::command('get', ["task-worker:$id"])) {
-                $processesAreReady = false;
+                $workersAreReady = false;
             }
         }
 
-        if (! $processesAreReady) {
+        if (! $workersAreReady) {
             if ($retries <= 0) {
                 return false;
             }
@@ -207,15 +222,32 @@ class TaskSupervisor extends Command
     {
         $this->info('Stopping workers...');
 
-        foreach ($this->processes ?? [] as $processId => $process) {
-            // TODO Wait for process to stop (wait for task to be executed)
-            $process->stop();
-
-            Redis::command('del', ["task-worker:$processId"]);
-
-            Redis::command('del', ["task-supervisors:$this->id:workers"]);
-
-            Redis::command('srem', ['task-supervisors', $this->id]);
+        foreach ($this->workers->keys() as $workerId) {
+            $this->stopWorker($workerId);
         }
+
+        Redis::command('del', ["task-supervisors:$this->id:workers"]);
+
+        Redis::command('srem', ['task-supervisors', $this->id]);
+    }
+
+    protected function stopWorker($id): void
+    {
+        $worker = $this->workers->get($id);
+
+        if (! $worker) {
+            return;
+        }
+
+        // TODO Wait for worker to stop (wait for task to be executed)
+        $worker->stop();
+
+        $this->workers->forget($id);
+
+        Redis::command('srem', ["task-supervisors:$this->id:workers", $id]);
+
+        Redis::command('del', ["task-worker:$id"]);
+
+        Redis::command('del', ["task-worker:$id:processed-tasks"]);
     }
 }

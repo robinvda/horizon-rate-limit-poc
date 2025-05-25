@@ -35,11 +35,13 @@
                             <table>
                                 <tr>
                                     <td>Worker</td>
-                                    <td>Job</td>
+                                    <td>Processed tasks</td>
+                                    <td>Processing task</td>
                                 </tr>
-                                @foreach(\Illuminate\Support\Facades\Redis::command('lrange', ["task-supervisors:$supervisor:workers", 0, -1]) as $worker)
+                                @foreach(\Illuminate\Support\Facades\Redis::command('smembers', ["task-supervisors:$supervisor:workers"]) as $worker)
                                 <tr>
                                     <td>{{ $worker }}</td>
+                                    <td>{{ \Illuminate\Support\Facades\Redis::command('get', ["task-worker:$worker:processed-tasks"]) }}</td>
                                     <td>{{ \Illuminate\Support\Facades\Redis::command('get', ["task-worker:$worker"]) }}</td>
                                 </tr>
                                 @endforeach
@@ -51,7 +53,7 @@
             <table>
                 <tr>
                     <th>Queue</th>
-                    <th>Jobs</th>
+                    <th>Tasks</th>
                 </tr>
                 @foreach(\Illuminate\Support\Facades\Redis::command('smembers', [\App\Tasks\Task::REDIS_KEY_QUEUES]) as $queue)
                     <tr>

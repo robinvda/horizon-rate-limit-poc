@@ -48,6 +48,8 @@ class TaskWorker extends Command
                     report($exception);
                 }
 
+                $this->incrementTaskProcessed();
+
                 $this->setWaitingState();
             });
     }
@@ -55,5 +57,10 @@ class TaskWorker extends Command
     protected function setWaitingState(): void
     {
         Redis::command('set', ["task-worker:$this->id", 'none']);
+    }
+
+    protected function incrementTaskProcessed(): void
+    {
+        Redis::command('incr', ["task-worker:$this->id:processed-tasks"]);
     }
 }
