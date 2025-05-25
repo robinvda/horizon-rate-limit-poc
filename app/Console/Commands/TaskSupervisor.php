@@ -42,7 +42,7 @@ class TaskSupervisor extends Command
      */
     public function handle()
     {
-        $this->id = Str::random();
+        $this->id = Str::uuid()->toString();
 
         $this->setExitHandlers();
 
@@ -51,7 +51,7 @@ class TaskSupervisor extends Command
         $this->processes = collect();
 
         for ($i = 0; $i < $this->argument('processes'); $i++) {
-            $id = Str::random();
+            $id = Str::uuid()->toString();
 
             $this->info("Starting process ($id)");
 
