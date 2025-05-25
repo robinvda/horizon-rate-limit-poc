@@ -81,11 +81,12 @@ class TaskSupervisor extends Command
 
             /** @var class-string<TaskQueue> $queueClass */
             if ($queueClass::attempt($queue)) {
-                // TODO We're popping the task before sending it to a worker which means it is lost if the supervisor stops/crashes in that time
-                // TODO This risk can be limited by finding a process before popping the task
-                // TODO Or by first getting the task and popping it after it was sent to a worker (increases load on Redis)
+                // If the supervisor stops (without signals) between popping the task and assigning it to a worker, the task is lost
+                // However, this is the most performant way to avoid jobs being assigned twice when running multiple supervisors
+                // An alternative could be to pop it and immediately set it to some temporary Redis key (requires an extra Redis call)
                 $task = Redis::command('lpop', [$queue]);
 
+                // If no task was found, continue to next queue
                 if (! $task) {
                     continue;
                 }
@@ -97,31 +98,30 @@ class TaskSupervisor extends Command
                 $this->info("Running task on $processId");
 
                 // Mark the worker as "working" by setting the active task
-                // Note: This can be any value, the task value is not used at the moment
+                // Note: This can be any value (except `none`), the task value is not used at the moment
                 Redis::command('set', ["task-worker:$processId", $task]);
 
-                // TODO Since we set a redis key for the worker with the active task, we may not need the pubsub pattern
+                // Send the task to the worker
                 Redis::publish("task-worker-$processId", $task);
 
+                // If the queue is empty
                 if (Redis::command('llen', [$queue]) == 0) {
-                    // If the queue is empty, remove it from the list of queues
+                    // Remove the queue from the list
                     Redis::command('srem', [Task::REDIS_KEY_QUEUES, $queue]);
 
-                    // Also remove the queue itself
+                    // Remove the queue itself
                     Redis::command('del', [$queue]);
                 }
             }
-
-            // If a task was found, we will immediately try to find another
-            if ($taskFound) {
-                $this->waitForTasks();
-            }
         }
 
-        $this->info('No tasks found');
+        // If no task was found (all queues are empty), we will wait before trying again
+        if (! $taskFound) {
+            $this->info('No tasks found');
 
-        // Wait to avoid high cpu usage
-        usleep($this->argument('wait'));
+            // Wait to avoid high cpu usage
+            usleep($this->argument('wait'));
+        }
 
         $this->waitForTasks();
     }
@@ -165,13 +165,14 @@ class TaskSupervisor extends Command
         $this->info('Stopping workers...');
 
         foreach ($this->processes ?? [] as $processId => $process) {
+            // TODO Wait for process to stop (wait for task to be executed)
+            $process->stop();
+
             Redis::command('del', ["task-worker:$processId"]);
 
             Redis::command('del', ["task-supervisors:$processId:workers"]);
 
             Redis::command('srem', ['task-supervisors', $this->id]);
-
-            $process->stop();
         }
     }
 }
