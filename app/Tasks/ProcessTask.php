@@ -3,6 +3,7 @@
 namespace App\Tasks;
 
 use App\Tasks\Queues\ProcessingQueue;
+use Illuminate\Support\Facades\Redis;
 
 class ProcessTask extends Task
 {
@@ -25,10 +26,6 @@ class ProcessTask extends Task
 
     public function handle()
     {
-        ray('Processing ' . $this->value);
-        for ($i = 0; $i < 1000000000; $i++) {
-            $a = $i * pi();
-        }
-        ray('Processed ' . $this->value);
+        Redis::command('incr', ["task:$this->value"]);
     }
 }

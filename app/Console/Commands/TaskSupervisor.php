@@ -89,6 +89,9 @@ class TaskSupervisor extends Command
 
             list($queueClass, $subQueue) = explode(':', $queue);
 
+            // TODO Even if there are no tasks to be executed, it will still hit the rate limit
+            // TODO Alternative: First pop the task and then hit the rate limit. If the rate limit fails, the task must be pushed back to the queue
+
             /** @var class-string<TaskQueue> $queueClass */
             if ($queueClass::attempt($queue)) {
                 // If the supervisor stops (without signals) between popping the task and assigning it to a worker, the task is lost

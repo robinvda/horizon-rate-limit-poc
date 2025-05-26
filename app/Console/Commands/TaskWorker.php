@@ -34,33 +34,43 @@ class TaskWorker extends Command
      */
     public function handle()
     {
+        // Prevents a timeout on the Redis subscription
+        ini_set('default_socket_timeout', -1);
+
         $this->id = $this->argument('id');
 
         $this->setExitHandler();
 
         $this->setWaitingState();
 
-        // We're using a different connection otherwise we won't be able to read/write because of the active subscription
-        Redis::connection('subscriber')
-            ->subscribe("task-worker-$this->id", function ($serializedTask) {
-                try {
-                    $this->processingTask = unserialize($serializedTask);
+        try {
+            // We're using a different connection otherwise we won't be able to read/write because of the active subscription
+            Redis::connection('subscriber')
+                ->subscribe("task-worker-$this->id", function ($serializedTask) {
+                    try {
+                        $this->processingTask = unserialize($serializedTask);
 
-                    $this->processingTask->handle();
-                } catch (Throwable $exception) {
-                    // TODO Possibly retry if a task fails
+                        $this->processingTask->handle();
+                    } catch (Throwable $exception) {
+                        // TODO Possibly retry if a task fails
 
-                    report($exception);
-                } finally {
-                    $this->processingTask = null;
-                }
+                        report($exception);
+                    } finally {
+                        $this->processingTask = null;
+                    }
 
-                $this->incrementTaskProcessed();
+                    $this->incrementTaskProcessed();
 
-                $this->setWaitingState();
+                    $this->setWaitingState();
 
-                $this->handleExit();
-            });
+                    $this->handleExit();
+                });
+        } catch (Throwable $exception) {
+            ray($exception);
+        } finally {
+            // TODO When this point is reached, the supervisor does not know the worker has crashed so it won't start a new worker
+            $this->handleExit();
+        }
     }
 
     protected function setWaitingState(): void

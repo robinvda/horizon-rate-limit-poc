@@ -22,7 +22,7 @@ abstract class TaskQueue
             return false;
         }
 
-        RateLimiter::hit($key, static::$limit);
+        RateLimiter::hit($key, static::$window);
 
         return true;
     }

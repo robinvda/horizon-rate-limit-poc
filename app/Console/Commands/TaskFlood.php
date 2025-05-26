@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Tasks\ProcessTask;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Redis;
 
 class TaskFlood extends Command
 {
@@ -12,7 +13,7 @@ class TaskFlood extends Command
      *
      * @var string
      */
-    protected $signature = 'task:flood';
+    protected $signature = 'task:flood {uniqueTasks=10} {duplicates=10}';
 
     /**
      * The console command description.
@@ -26,6 +27,15 @@ class TaskFlood extends Command
      */
     public function handle()
     {
-        collect(range(1, 10))->each(fn ($value) => ProcessTask::dispatch($value));
+        $uniqueTasks = $this->argument('uniqueTasks');
+        $duplicates = $this->argument('duplicates');
+
+        $this->info("Dispatching $uniqueTasks unique tasks $duplicates times = " . ($uniqueTasks * $duplicates) . " total");
+
+        for ($i = 0; $i < $duplicates; $i++) {
+            for ($j = 0; $j < $uniqueTasks; $j++) {
+                ProcessTask::dispatch($j);
+            }
+        }
     }
 }
