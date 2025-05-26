@@ -20,12 +20,15 @@ class ProcessTask extends Task
 
     public function subQueue(): string
     {
-        return $this->value;
+        return rand(1, 3);
     }
 
     public function handle()
     {
         ray('Processing ' . $this->value);
-        sleep(1); // Simulate work
+        for ($i = 0; $i < 1000000000; $i++) {
+            $a = $i * pi();
+        }
+        ray('Processed ' . $this->value);
     }
 }

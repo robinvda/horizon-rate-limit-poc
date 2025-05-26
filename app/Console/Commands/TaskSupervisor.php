@@ -18,7 +18,12 @@ class TaskSupervisor extends Command
      *
      * @var string
      */
-    protected $signature = 'task:supervisor {workers=5} {wait=1} {maxTasks=50}';
+    protected $signature = 'task:supervisor
+                            {workers=5 : The amount of workers to start}
+                            {wait=1 : The time (in seconds) to wait for tasks after no task was found}
+                            {maxTasks=50 : The number of tasks a worker can process before stopping (a new worker will be started by the supervisor)}
+                            {retentionPeriod=10 : The time (in seconds) to wait for workers to stop when stopping the supervisor}
+                            ';
 
     /**
      * The console command description.
@@ -34,8 +39,8 @@ class TaskSupervisor extends Command
 
     protected string $id;
 
-    protected ?string $processingQueue;
-    protected ?string $processingSerializedTask;
+    protected ?string $processingQueue = null;
+    protected ?string $processingSerializedTask = null;
 
     protected bool $shouldExit = false;
 
@@ -46,14 +51,14 @@ class TaskSupervisor extends Command
     {
         $this->id = Str::uuid()->toString();
 
-        $this->setExitHandlers();
+        $this->setExitHandler();
 
         Redis::command('sadd', ['task-supervisors', $this->id]);
 
         $this->workers = collect();
 
         for ($i = 0; $i < $this->argument('workers'); $i++) {
-            $this->createWorker();
+            $this->startWorker();
         }
 
         if (! $this->waitForWorkers()) {
@@ -147,7 +152,7 @@ class TaskSupervisor extends Command
 
                 $this->stopWorker($workerId);
 
-                $this->createWorker();
+                $this->startWorker();
 
                 return $this->findIdleWorkerId();
             }
@@ -161,7 +166,7 @@ class TaskSupervisor extends Command
         return $this->findIdleWorkerId();
     }
 
-    protected function setExitHandlers(): void
+    protected function setExitHandler(): void
     {
         $this->trap([SIGTERM, SIGQUIT, SIGABRT, SIGINT], function (int $signal) {
             $this->shouldExit = true;
@@ -182,7 +187,7 @@ class TaskSupervisor extends Command
         }
     }
 
-    protected function createWorker(): void
+    protected function startWorker(): void
     {
         $id = Str::uuid()->toString();
 
@@ -239,15 +244,28 @@ class TaskSupervisor extends Command
             return;
         }
 
-        // TODO Wait for worker to stop (wait for task to be executed)
-        $worker->stop();
+        $worker->signal(SIGTERM);
+
+        // Wait for the worker to stop
+        $tries = $this->argument('retentionPeriod');
+        while (Redis::command('get', ["task-worker:$id"]) !== 'none') {
+            $this->info("Worker $id is processing a task, waiting to finish ($tries)...");
+            sleep(1);
+
+            // If the process hasn't stopped in x seconds, we will send another signal and continue
+            if (--$tries <= 0) {
+                $worker->stop();
+
+                break;
+            }
+        }
 
         $this->workers->forget($id);
 
+        Redis::command('del', ["task-worker:$this->id"]);
+
+        Redis::command('del', ["task-worker:$this->id:processed-tasks"]);
+
         Redis::command('srem', ["task-supervisors:$this->id:workers", $id]);
-
-        Redis::command('del', ["task-worker:$id"]);
-
-        Redis::command('del', ["task-worker:$id:processed-tasks"]);
     }
 }

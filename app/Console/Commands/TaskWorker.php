@@ -25,6 +25,10 @@ class TaskWorker extends Command
 
     protected string $id;
 
+    protected ?Task $processingTask = null;
+
+    protected bool $shouldExit = false;
+
     /**
      * Execute the console command.
      */
@@ -32,25 +36,30 @@ class TaskWorker extends Command
     {
         $this->id = $this->argument('id');
 
+        $this->setExitHandler();
+
         $this->setWaitingState();
 
         // We're using a different connection otherwise we won't be able to read/write because of the active subscription
         Redis::connection('subscriber')
             ->subscribe("task-worker-$this->id", function ($serializedTask) {
                 try {
-                    $task = unserialize($serializedTask);
+                    $this->processingTask = unserialize($serializedTask);
 
-                    /** @var Task $task */
-                    $task->handle();
+                    $this->processingTask->handle();
                 } catch (Throwable $exception) {
                     // TODO Possibly retry if a task fails
 
                     report($exception);
+                } finally {
+                    $this->processingTask = null;
                 }
 
                 $this->incrementTaskProcessed();
 
                 $this->setWaitingState();
+
+                $this->handleExit();
             });
     }
 
@@ -62,5 +71,25 @@ class TaskWorker extends Command
     protected function incrementTaskProcessed(): void
     {
         Redis::command('incr', ["task-worker:$this->id:processed-tasks"]);
+    }
+
+    protected function setExitHandler(): void
+    {
+        $this->trap([SIGTERM, SIGQUIT, SIGABRT, SIGINT], function (int $signal) {
+            $this->shouldExit = true;
+
+            // If we're not processing a task, we will exit immediately
+            // Otherwise we'll exit after the task has been processed
+            if (! $this->processingTask) {
+                $this->handleExit();
+            }
+        });
+    }
+
+    protected function handleExit(): void
+    {
+        if ($this->shouldExit) {
+            exit();
+        }
     }
 }
