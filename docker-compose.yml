@@ -1,27 +1,26 @@
-name: horizon-test
-
 networks:
-  default:
-    name: horizon-test
+    default:
+        name: horizon-test
 
 services:
-  base:
-    image: registry.weap.nl:5005/docker/phpnginx:8.2-multi-platform
-    environment:
-      ROLE: laravel-app
-    depends_on:
-      redis:
-        condition: service_started
-    volumes:
-      - ./:/var/www
-    ports:
-      - 9999:80
+    base:
+        build:
+            context: ./vendor/laravel/sail/runtimes/8.4
+            dockerfile: Dockerfile
+        image: sail-8.4/app
+        environment:
+            XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
+        volumes:
+            - '.:/var/www/html'
+        ports:
+            - 9999:80
 
-  redis:
-    image: redis:6
-    volumes:
-      - redis:/data
+    redis:
+        image: redis:7
+        volumes:
+            - redis:/data
+        ports:
+            - 9998:6379
 
 volumes:
-  postgres:
-  redis:
+    redis:
